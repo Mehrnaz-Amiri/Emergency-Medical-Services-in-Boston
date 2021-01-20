@@ -1,0 +1,546 @@
+---
+title: "Table of Content"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '3'
+  html_notebook:
+    toc: yes
+    toc_depth: 3
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 14px;
+  }
+td {  /* Table  */
+  font-size: 12px;
+}
+h1.title {
+  font-size: 18px;
+}
+h1 { /* Header 1 */
+  font-size: 18px;
+  color: Black;
+}
+h2 { /* Header 2 */
+    font-size: 16px;
+  color: DarkBlue;
+}
+}
+h3 { /* Header 3 */
+    font-size: 14px;
+  color: DarkBlue;
+}
+code.r{ /* Code block */
+    font-size: 12px;
+}
+pre { /* Code block - determines code spacing between lines */
+    font-size: 14px;
+}
+</style>
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='hide', comment=""}
+knitr::opts_chunk$set(fig.width=14, fig.height=11) 
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(plotly)
+library(data.table)
+library(ggplot2)
+library(tidyverse)
+library(tmap)
+library(sf)
+library(ggmap)
+library(XML)
+library(RCurl)
+library(scrapeR)
+library(lubridate) 
+library(RColorBrewer)
+library(odbc)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='hide', comment=""}
+# Connection to ARCHIVE_940
+# connection <- dbConnect(odbc(),
+                 #Driver = "SQL Server",
+                 #Server = "",
+                 #DataSource = "",
+                 #InitialCatalog = "",
+                 #Trusted_Connection="yes")
+# Query to get CAD data
+# sqlcm <- ""
+# CAD <- dbGetQuery(connection, sqlcm)
+# print(CAD)
+
+# Import CAD data manually
+CAD <- read.csv("~/Desktop/CAD.Data2.csv", sep = ",", header = FALSE,
+stringsAsFactors=FALSE)
+colnames(CAD) <- c("num_1","unit_id","dispo","priority","tycod","ad_ts","ad_sec","ds_ts","ds_sec","resptime","disptime","enrtetime","travtime","onscenetime","athosptime","earea","zip","month","reopen","run_dt","weeknum","sub_tycod","eid","location","en_ts","en_sec","ar_ts","ta_ts","tr_ts","ar_sec","ta_sec","tr_sec","xsec","latitude","longitude")
+# Make Date
+CAD$run_dt <- as.Date(CAD$run_dt,format="%Y-%m-%d")
+# Consider specific Date
+MyDate <- "2020-11-27"
+previous.week1 <- as.Date(MyDate)-6
+cad.weekly1 <- subset(CAD, CAD$run_dt >= as.Date(previous.week1) &
+               CAD$run_dt <= as.Date(MyDate))
+
+
+LastDate <- "2019-11-27"
+previous.week2 <- as.Date(LastDate)-6
+cad.weekly2 <- subset(CAD, CAD$run_dt >= as.Date(previous.week2) &
+               CAD$run_dt <= as.Date(LastDate))
+
+# Connect to SafetyPad System
+search_url <- paste0("https://bostonems.safetypad.com/api/?action=search_pcrs&columns=eCase.01m,eResponse.03,eDispatch.01,eTimes.03,eScene.17,eResponse.02,eResponse.14,eResponse.14s,eResponse.15,eDisposition.12,eDisposition.01&api_key=", Sys.getenv(""))
+search <- httr::GET(search_url)
+doc.search <- xmlParse(search, useInternalNodes = TRUE)
+a1 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eCase.01m")), "eCase.01m")
+a2 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eResponse.03")), "eResponse.03")
+a3 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eDispatch.01")), "eDispatch.01")
+a4 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eTimes.03")), "eTimes.03")
+a6 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eScene.17")), "eScene.17")
+a9 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eResponse.02")), "eResponse.02")
+a10 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eResponse.14")), "eResponse.14")
+a11 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eResponse.14s")), "eResponse.14s")
+a12 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eResponse.15")), "eResponse.15")
+a13 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eDisposition.12")), "eDisposition.12")
+a14 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search, "//pcr/eDisposition.01")), "eDisposition.01")
+pcr_weekly1 <- cbind(a1,a2,a3,a4,a6,a9,a10,a11,a12,a13,a14)
+m <- as.POSIXct(pcr_weekly1$eTimes.03,format="%Y-%m-%d %H:%M:%S",tz=Sys.timezone())
+h <- ymd_hms(pcr_weekly1$eTimes.03,tz=Sys.timezone())
+pcr_weekly1$eTimes.03 <- as.Date(h, format = "%Y-%m-%d %H:%M:%S'")
+pcr_weekly <- subset(pcr_weekly1, pcr_weekly1$eTimes.03 >= as.Date(previous.week1) &
+               pcr_weekly1$eTimes.03 <= as.Date(MyDate))
+
+search_url2 <- paste0("https://bostonems.safetypad.com/api/?action=search_pcrs&e1=eTimes.03&o1=lt&v1=2020-01-01&columns=eCase.01m,eResponse.03,eDispatch.01,eTimes.03,eScene.17,eResponse.02,eResponse.14,eResponse.14s,eResponse.15,eDisposition.12,eDisposition.01&api_key=", Sys.getenv(""))
+search2 <- httr::GET(search_url2)
+doc.search2 <- xmlParse(search2, useInternalNodes = TRUE)
+a1 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eCase.01m")), "eCase.01m")
+a2 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eResponse.03")), "eResponse.03")
+a3 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eDispatch.01")), "eDispatch.01")
+a4 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eTimes.03")), "eTimes.03")
+a6 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eScene.17")), "eScene.17")
+a9 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eResponse.02")), "eResponse.02")
+a10 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eResponse.14")), "eResponse.14")
+a11 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eResponse.14s")), "eResponse.14s")
+a12 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eResponse.15")), "eResponse.15")
+a13 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eDisposition.12")), "eDisposition.12")
+a14 <- setNames(xmlToDataFrame(node=getNodeSet(doc.search2, "//pcr/eDisposition.01")), "eDisposition.01")
+pcr_weekly2 <- cbind(a1,a2,a3,a4,a6,a9,a10,a11,a12,a13,a14)
+m2 <- as.POSIXct(pcr_weekly2$eTimes.03,format="%Y-%m-%d %H:%M:%S",tz=Sys.timezone())
+h2 <- ymd_hms(pcr_weekly2$eTimes.03,tz=Sys.timezone())
+pcr_weekly2$eTimes.03 <- as.Date(h2, format = "%Y-%m-%d %H:%M:%S'")
+pcr_weekly2 <- subset(pcr_weekly2, pcr_weekly2$eTimes.03 >= as.Date(previous.week2) &
+               pcr_weekly2$eTimes.03 <= as.Date(LastDate))
+
+# Merging CAD data and PCR data
+cad.weekly1$num_1 <- gsub("E*", "", cad.weekly1$num_1)
+cad.pcr1 <- merge(cad.weekly1, pcr_weekly, by.x = "num_1", by.y = "eResponse.03")
+
+cad.weekly2$num_1 <- gsub("E*", "", cad.weekly2$num_1)
+cad.pcr2 <- merge(cad.weekly2, pcr_weekly2, by.x = "num_1", by.y = "eResponse.03")
+
+
+```
+
+\
+
+
+# Comparison Results For Weeks From `r previous.week1` to `r MyDate` and `r previous.week2` to `r LastDate`
+\
+
+
+\
+
+## Call History by Disposition For Weeks From `r previous.week1` to `r MyDate` and `r previous.week2` to `r LastDate`
+\
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment=""}
+
+cad.pcr1$eDisposition.12 <- ifelse(cad.pcr1$eDisposition.12 == "" | cad.pcr1$eDisposition.12 == "Canceled (Prior to Arrival At Scene)" | cad.pcr1$eDisposition.12 == "No Patient Found (Canceled on Scene)" | cad.pcr1$eDisposition.12 == "Treated, Transferred to Other EMS"| cad.pcr1$eDisposition.12 == "No Patient Contact (Canceled on Scene)" , NA, ifelse(cad.pcr1$eDisposition.12 == "Dead at Scene - No Resus - Not Transported"| cad.pcr1$eDisposition.12 == "Dead at Scene - Resus Attempted - No Transport", "Referred to the Medical Examiner", as.character(cad.pcr1$eDisposition.12)))
+
+cad.pcr2$eDisposition.12 <- ifelse(cad.pcr2$eDisposition.12 == "" | cad.pcr2$eDisposition.12 == "Canceled (Prior to Arrival At Scene)" | cad.pcr2$eDisposition.12 == "No Patient Found (Canceled on Scene)" | cad.pcr2$eDisposition.12 == "Treated, Transferred to Other EMS" | cad.pcr2$eDisposition.12  == "Standby Only - No Services"| cad.pcr2$eDisposition.12 == "No Patient Contact (Canceled on Scene)" , NA, ifelse(cad.pcr2$eDisposition.12 == "Dead at Scene - No Resus - Not Transported" | cad.pcr2$eDisposition.12 == "Dead at Scene - Resus Attempted - No Transport", "Referred to the Medical Examiner", as.character(cad.pcr2$eDisposition.12)))
+
+num_disposition1 <- as.data.frame(table(cad.pcr1$eDisposition.12))
+names(num_disposition1)[1] <- "Disposition_2020"
+names(num_disposition1)[2] <- "2020"
+num_disposition2 <- as.data.frame(table(cad.pcr2$eDisposition.12))
+names(num_disposition2)[1] <- "Disposition_2019"
+names(num_disposition2)[2] <- "2019"
+
+dispositions <- merge(num_disposition1, num_disposition2, by.x = 'Disposition_2020', by.y = 'Disposition_2019', all=TRUE)
+melted <- melt(dispositions)
+ggplot(melted, aes(x=Disposition_2020, y=value, fill=variable)) +
+geom_bar(stat="identity", position=position_dodge()) + theme_bw() + ylab("Frequency") +
+  ggtitle("Call history by disposition for a week in 2020 vs. 2019") + theme(axis.text.x = element_text(angle=90, vjust=-0.2, size = 14)) +
+ theme(text = element_text(size=14)) + geom_text(aes(label=value), vjust=-0.6, color="black",
+position = position_dodge(0.9), size=3) + scale_fill_manual(values=c("dodgerblue3","lightblue")) + labs(fill="Years") + xlab("Disposition")
+```
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment="", results='hide'}
+cad.pcr1$eScene.17 <- ifelse(cad.pcr1$eScene.17 == "Boston" | cad.pcr1$eScene.17 == "boston", "BOSTON", as.character(cad.pcr1$eScene.17)) 
+cad.pcr1$eScene.17 <- ifelse(cad.pcr1$eScene.17 == "Dorchester", "DORCHESTER", ifelse(cad.pcr1$eScene.17 == "SOUTH BOSTON"| cad.pcr1$eScene.17 == "South Boston" | cad.pcr1$eScene.17 == "DORCHESTER" & cad.pcr1$zip == "02127", "South Boston", ifelse(cad.pcr1$eScene.17 == 'Roslindale' | cad.pcr1$eScene.17 == "ROSLINDALE", "Roslindale", as.character(cad.pcr1$eScene.17)))) 
+
+cad.pcr1$eScene.17 <- ifelse(cad.pcr1$eScene.17 == "DORCHESTER" & cad.pcr1$zip == "02121" | cad.pcr1$zip == "02125", "Dorchester (ZIPs 02121, 02125)", ifelse(cad.pcr1$eScene.17 == "DORCHESTER" & cad.pcr1$zip == "02122" | cad.pcr1$zip == "02124", "Dorchester (ZIPs 02122, 02124)", ifelse(cad.pcr1$eScene.17 == "BOSTON" & cad.pcr1$zip == "02115", "Fenway", ifelse(cad.pcr1$eScene.17 == "JAMAICA PLAIN" |  cad.pcr1$eScene.17 == "Jamaica Plain", "Jamaica Plain", ifelse(cad.pcr1$eScene.17 == "BOSTON" & cad.pcr1$zip == "02111" | cad.pcr1$zip == "02118", "South End", ifelse(cad.pcr1$eScene.17 == "BOSTON", "Back Bay, Beacon Hill, Downtown, North End, West End", ifelse(cad.pcr1$eScene.17 == "BRIGHTON"| cad.pcr1$eScene.17 == "Brighton","Allston/Brighton", ifelse(cad.pcr1$eScene.17 == "EAST BOSTON", "East Boston", ifelse(cad.pcr1$eScene.17 == "HYDE PARK", "Hyde Park", ifelse(cad.pcr1$eScene.17 == "MATTAPAN"| cad.pcr1$eScene.17 == "mattapan" | cad.pcr1$eScene.17 == "DORCHESTER" & cad.pcr1$zip == "02126", "Mattapan", ifelse(cad.pcr1$eScene.17 == "ROXBURY" | cad.pcr1$eScene.17 == "DORCHESTER" & cad.pcr1$zip == "02119", "Roxbury", ifelse(cad.pcr1$eScene.17 == "WEST ROXBURY", "West Roxbury", ifelse(cad.pcr1$eScene.17 == "", NA, as.character(cad.pcr1$eScene.17))))))))))))))
+
+
+cad.pcr2$eScene.17 <- ifelse(cad.pcr2$eScene.17 == "Boston" | cad.pcr2$eScene.17 == "boston", "BOSTON", as.character(cad.pcr2$eScene.17)) 
+cad.pcr2$eScene.17 <- ifelse(cad.pcr2$eScene.17 == "Dorchester", "DORCHESTER", ifelse(cad.pcr2$eScene.17 == "SOUTH BOSTON"| cad.pcr2$eScene.17 == "South Boston" | cad.pcr2$eScene.17 == "DORCHESTER" & cad.pcr2$zip == "02127", "South Boston", ifelse(cad.pcr2$eScene.17 == 'Roslindale' | cad.pcr2$eScene.17 == "ROSLINDALE", "Roslindale", as.character(cad.pcr2$eScene.17)))) 
+
+cad.pcr2$eScene.17 <- ifelse(cad.pcr2$eScene.17 == "DORCHESTER" & cad.pcr2$zip == "02121" | cad.pcr2$zip == "02125", "Dorchester (ZIPs 02121, 02125)", ifelse(cad.pcr2$eScene.17 == "DORCHESTER" & cad.pcr2$zip == "02122" | cad.pcr2$zip == "02124", "Dorchester (ZIPs 02122, 02124)", ifelse(cad.pcr2$eScene.17 == "BOSTON" & cad.pcr2$zip == "02115", "Fenway", ifelse(cad.pcr2$eScene.17 == "JAMAICA PLAIN" |  cad.pcr2$eScene.17 == "Jamaica Plain", "Jamaica Plain", ifelse(cad.pcr2$eScene.17 == "BOSTON" & cad.pcr2$zip == "02111" | cad.pcr2$zip == "02118", "South End", ifelse(cad.pcr2$eScene.17 == "BOSTON", "Back Bay, Beacon Hill, Downtown, North End, West End", ifelse(cad.pcr2$eScene.17 == "BRIGHTON"| cad.pcr2$eScene.17 == "Brighton","Allston/Brighton", ifelse(cad.pcr2$eScene.17 == "EAST BOSTON", "East Boston", ifelse(cad.pcr2$eScene.17 == "HYDE PARK", "Hyde Park", ifelse(cad.pcr2$eScene.17 == "MATTAPAN"| cad.pcr2$eScene.17 == "mattapan" | cad.pcr2$eScene.17 == "DORCHESTER" & cad.pcr2$zip == "02126", "Mattapan", ifelse(cad.pcr2$eScene.17 == "ROXBURY" | cad.pcr2$eScene.17 == "DORCHESTER" & cad.pcr2$zip == "02119", "Roxbury", ifelse(cad.pcr2$eScene.17 == "WEST ROXBURY", "West Roxbury", ifelse(cad.pcr2$eScene.17 == "", NA, as.character(cad.pcr2$eScene.17))))))))))))))
+
+
+```
+
+
+
+
+\
+
+
+## Number of Incidents Across Neighborhoods For Weeks From `r previous.week1` to `r MyDate` and `r previous.week2` to `r LastDate`
+\
+
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment=""}
+
+
+df.nbhd1 <- as.data.frame(table(cad.pcr1$eScene.17))
+names(df.nbhd1)[1] <- "nbhd_2020"
+names(df.nbhd1)[2] <- "2020"
+df.nbhd2 <- as.data.frame(table(cad.pcr2$eScene.17)) 
+names(df.nbhd2)[1] <- "nbhd_2019"
+names(df.nbhd2)[2] <- "2019"
+nbhds <- merge(df.nbhd1, df.nbhd2, by.x = 'nbhd_2020', by.y = 'nbhd_2019', all=TRUE)
+
+melted.nbhds <- melt(nbhds)
+ggplot(melted.nbhds, aes(x=nbhd_2020, y=value, fill=variable)) +
+geom_bar(stat="identity", position=position_dodge()) + theme_bw() + ylab("Frequency") + xlab("Neighborhoods") + 
+  ggtitle("Number of incidents for each neighborhood for a week in 2020 vs. 2019") +
+ theme(text = element_text(size=14))+ scale_fill_manual(values=c("dodgerblue3","lightblue")) +
+   geom_text(
+    aes(label = value), 
+    hjust = -0.5, size = 3,
+    position = position_dodge(width = 0.9),
+    inherit.aes = TRUE) + 
+  coord_flip() + labs(fill="Years")
+
+
+
+    
+```
+
+
+
+\
+
+## Number of Incidents by Hospitals For Weeks From `r previous.week1` to `r MyDate` and `r previous.week2` to `r LastDate`
+\
+
+
+\
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+cad.pcr1$eDisposition.01 <- ifelse(cad.pcr1$eDisposition.01 == "", NA, as.character(cad.pcr1$eDisposition.01))
+cad.pcr2$eDisposition.01 <- ifelse(cad.pcr2$eDisposition.01 == "", NA, as.character(cad.pcr2$eDisposition.01))
+
+df.hospital1 <- as.data.frame(table(cad.pcr1$eDisposition.01)) 
+names(df.hospital1)[1] <- "hospitals_2020"
+names(df.hospital1)[2] <- "2020"
+df.hospital2 <- as.data.frame(table(cad.pcr2$eDisposition.01)) 
+names(df.hospital2)[1] <- "hospitals_2019"
+names(df.hospital2)[2] <- "2019"
+hospitals <- merge(df.hospital1, df.hospital2, by.x = 'hospitals_2020', by.y = 'hospitals_2019', all=TRUE)
+
+melted.hospitals <- melt(hospitals)
+ggplot(melted.hospitals, aes(x=hospitals_2020, y=value, fill=variable)) +
+geom_bar(stat="identity", position=position_dodge()) + theme_bw() + ylab("Frequency") + xlab("Hospitals") + 
+  ggtitle("Number of incidents by hospitals for a week in 2020 vs. 2019") + 
+ theme(text = element_text(size=14))+ scale_fill_manual(values=c("dodgerblue3","lightblue")) +
+   geom_text(
+    aes(label = value), 
+    hjust = -0.5, size = 3,
+    position = position_dodge(width = 0.9),
+    inherit.aes = TRUE) + 
+  coord_flip() + labs(fill="Years")
+```
+
+
+\
+
+\
+
+\
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment="", results='hide'}
+cad.pcr1$eDisposition.12 <- ifelse(cad.pcr1$eDisposition.12 == 'Assist, Unit', 1, ifelse(cad.pcr1$eDisposition.12 == "Exposure", 2, ifelse(cad.pcr1$eDisposition.12 == "Referred to the Medical Examiner", 3, ifelse(cad.pcr1$eDisposition.12 == "Party denies need (PDN)",4, ifelse(cad.pcr1$eDisposition.12 == "Treated, Transported by EMS", 5, ifelse(cad.pcr1$eDisposition.12 == "Patient Refusal",6, NA))))))
+
+
+cad.pcr1 <- cad.pcr1 %>% rename(eScene = eScene.17,
+                              eDisposition12 = eDisposition.12)
+library(sqldf)
+Categories.new <- sqldf("select eScene,
+            sum(eDisposition12 == 1) as AssistUnit,
+            sum(eDisposition12 == 2) as Exposure,
+            sum(eDisposition12 == 3) as Referred_Medical_Examiner,
+            sum(eDisposition12 == 4) as PartyDeniesNeed,
+            sum(eDisposition12 == 5) as Treated_Transported_by_EMS,
+            sum(eDisposition12 == 6) as PatientRefusal
+            from 'cad.pcr1'
+            group by eScene")
+
+
+
+names(Categories.new)[1] <- 'Neighborhoods'
+Categories.new <- Categories.new[-1,]
+
+
+cad.pcr2$eDisposition.12 <- ifelse(cad.pcr2$eDisposition.12 == 'Assist, Unit', 1, ifelse(cad.pcr2$eDisposition.12 == "Exposure", 2, ifelse(cad.pcr2$eDisposition.12 == "Referred to the Medical Examiner", 3, ifelse(cad.pcr2$eDisposition.12 == "Party denies need (PDN)",4, ifelse(cad.pcr2$eDisposition.12 == "Treated, Transported by EMS", 5, ifelse(cad.pcr2$eDisposition.12 == "Patient Refusal",6, NA))))))
+
+cad.pcr2 <- cad.pcr2 %>% rename(eScene = eScene.17,
+                              eDisposition12 = eDisposition.12)
+Categories.old <- sqldf("select eScene,
+            sum(eDisposition12 == 1) as AssistUnit,
+            sum(eDisposition12 == 2) as Exposure,
+            sum(eDisposition12 == 3) as Referred_Medical_Examiner,
+            sum(eDisposition12 == 4) as PartyDeniesNeed,
+            sum(eDisposition12 == 5) as Treated_Transported_by_EMS,
+            sum(eDisposition12 == 6) as PatientRefusal
+            from 'cad.pcr2'
+            group by eScene")
+
+
+
+names(Categories.old)[1] <- 'Neighborhoods'
+Categories.old <- Categories.old[-1,]
+```
+
+
+
+
+
+\
+
+
+## Disposition Across Neighborhoods For Weeks From `r previous.week1` to `r MyDate` and `r previous.week2` to `r LastDate`
+\
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment="", results='hide'}
+nbhd <- st_read(dsn="~/Desktop/NHzip_2020-10-16/NHzip_2020-10-16.shp")
+nbhd <- st_transform(nbhd, "+proj=longlat +datum=NAD83 +no_defs")
+```
+
+\
+
+\
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment=""}
+
+nbhd1 <- merge(nbhd, Categories.new, by.x='Neighborho', by.y ="Neighborhoods", all.x =TRUE) 
+nbhd2 <- merge(nbhd, Categories.old, by.x='Neighborho', by.y ="Neighborhoods", all.x =TRUE) 
+pal <- brewer.pal(5,"YlOrBr")
+pal <- c("#F5F5F5",pal)
+
+tmap_mode('view')
+map1 <- tm_shape(nbhd1) + tm_polygons('AssistUnit', style="pretty", palette=pal, title = "Assist Unit For <br> a Week in 2020") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+
+tmap_mode('view')
+map2 <- tm_shape(nbhd2) + tm_polygons('AssistUnit', style="pretty", palette=pal, title = "Assist Unit For <br> a Week in 2019") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_arrange(map1, map2)
+
+
+tmap_mode('view')
+map3 <- tm_shape(nbhd1) + tm_polygons('Exposure', style="pretty", palette=pal, title = "Exposure For <br> a Week in 2020") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_mode('view')
+map4 <- tm_shape(nbhd2) + tm_polygons('Exposure', style="pretty", palette=pal, title = "Exposure For <br> a Week in 2019") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_arrange(map3, map4)
+
+tmap_mode('view')
+map5 <- tm_shape(nbhd1) + tm_polygons('Referred_Medical_Examiner', style="pretty", palette=pal, title = "Referred Medical Examiner <br> For a Week in 2020") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_mode('view')
+map6 <- tm_shape(nbhd2) + tm_polygons('Referred_Medical_Examiner', style="pretty", palette=pal, title = "Referred Medical Examiner <br> For a Week in 2019") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_arrange(map5, map6)
+
+
+tmap_mode('view')
+map7 <- tm_shape(nbhd1) + tm_polygons('PartyDeniesNeed', style="pretty", palette=pal, title = "Party Denies Need <br> For a Week in 2020") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_mode('view')
+map8 <- tm_shape(nbhd2) + tm_polygons('PartyDeniesNeed', style="pretty", palette=pal, title = "Party Denies Need <br> For a Week in 2019") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_arrange(map7, map8)
+
+
+tmap_mode('view')
+map9 <- tm_shape(nbhd1) + tm_polygons('Treated_Transported_by_EMS', style="pretty", palette="YlOrBr", title = "Treated Transported by EMS <br> For a Week in 2020") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_mode('view')
+map10 <- tm_shape(nbhd2) + tm_polygons('Treated_Transported_by_EMS', style="pretty", palette="YlOrBr", title = "Treated Transported by EMS <br> For a Week in 2019") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_arrange(map9, map10)
+
+
+
+tmap_mode('view')
+map11 <- tm_shape(nbhd1) + tm_polygons('PatientRefusal', style="pretty", palette="YlOrBr", title = "Patient Refusal For <br> a Week in 2020") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_mode('view')
+map12 <- tm_shape(nbhd2) + tm_polygons('PatientRefusal', style="pretty", palette="YlOrBr", title = "Patient Refusal For <br> a Week in 2019") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom")) 
+
+tmap_arrange(map11, map12)
+
+```
+
+\
+
+\
+
+
+
+
+## Boston EMS Responses For Weeks From `r previous.week1` to `r MyDate` and `r previous.week2` to `r LastDate`
+\
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment=""}
+response1 <- as.data.frame(table(cad.pcr1$eResponse.15))
+names(response1)[1] <- "EMS Responses"
+names(response1)[2] <- "Frequency For a Week in This Year"
+response2 <- as.data.frame(table(cad.pcr2$eResponse.15))
+names(response2)[1] <- "EMS Responses"
+names(response2)[2] <- "Frequency For a Week in Previous Year"
+responses <- merge(response1, response2, by = "EMS Responses", all=TRUE)
+
+
+day.new <- cad.pcr1[cad.pcr1$run_dt == MyDate,]
+day.old <- cad.pcr2[cad.pcr2$run_dt == LastDate,]
+response.day1 <- as.data.frame(table(day.new$eResponse.15))
+names(response.day1)[1] <- "EMS Responses"
+names(response.day1 )[2] <- "Frequency For a Day in This Year"
+response.day2 <- as.data.frame(table(day.old$eResponse.15))
+names(response.day2)[1] <- "EMS Responses"
+names(response.day2)[2] <- "Frequency For a Day in Previous Year"
+responses.day <- merge(response.day1, response.day2, by = "EMS Responses", all=TRUE)
+
+respons.day.week <- merge(responses.day,responses, by = "EMS Responses", all=TRUE)
+library(data.table)
+respons.day.week <- as.data.frame(t(as.matrix(respons.day.week)))
+respons.day.week <- setDT(respons.day.week, keep.rownames = TRUE)[]
+colnames(respons.day.week) <- c("Boston EMS Responses", "ALS Paramedic", "BLS AEMT", "BLS Basic/EMT")
+respons.day.week <- respons.day.week[-1,]
+library(stargazer)
+stargazer(respons.day.week, summary=F, align=T, digits=4, type = "text", no.space=T, flip=F)
+```
+
+
+
+\
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment=""}
+cad.pcr1 <- cad.pcr1 %>% rename(eResponse15LevelofCare = eResponse.15)
+
+cad.pcr1$eResponse15LevelofCare <- ifelse(cad.pcr1$eResponse15LevelofCare == 'ALS-Paramedic', 1, ifelse(cad.pcr1$eResponse15LevelofCare == "BLS-AEMT", 2, ifelse(cad.pcr1$eResponse15LevelofCare == "BLS-Basic /EMT", 3, NA)))
+
+library(sqldf)
+Categories2.new <- sqldf("select eScene,
+            sum(eResponse15LevelofCare == 1) as ALS_,
+            sum(eResponse15LevelofCare == 2) as BLSA_,
+            sum(eResponse15LevelofCare == 3) as BLS_
+            from 'cad.pcr1'
+            group by eScene")
+
+names(Categories2.new)[1] <- 'Neighborhoods'
+Categories2.new <- Categories2.new[-1,]
+
+
+
+cad.pcr2 <- cad.pcr2 %>% rename(eResponse15LevelofCare = eResponse.15)
+
+cad.pcr2$eResponse15LevelofCare <- ifelse(cad.pcr2$eResponse15LevelofCare == 'ALS-Paramedic', 1, ifelse(cad.pcr2$eResponse15LevelofCare == "BLS-AEMT", 2, ifelse(cad.pcr2$eResponse15LevelofCare == "BLS-Basic /EMT", 3, NA)))
+
+
+Categories2.old <- sqldf("select eScene,
+            sum(eResponse15LevelofCare == 1) as ALS_,
+            sum(eResponse15LevelofCare == 2) as BLSA_,
+            sum(eResponse15LevelofCare == 3) as BLS_
+            from 'cad.pcr2'
+            group by eScene")
+
+names(Categories2.old)[1] <- 'Neighborhoods'
+Categories2.old <- Categories2.old[-1,]
+```
+
+
+
+\
+
+
+## Boston EMS Responses For Weeks From `r previous.week1` to `r MyDate` and `r previous.week2` to `r LastDate`
+\
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment="", results='hide'}
+nbhd <- st_read(dsn="~/Desktop/NHzip_2020-10-16/NHzip_2020-10-16.shp")
+nbhd <- st_transform(nbhd, "+proj=longlat +datum=NAD83 +no_defs")
+```
+\
+
+\
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment=""}
+
+nbhd1.1 <- merge(nbhd, Categories2.new, by.x='Neighborho', by.y ="Neighborhoods", all.x =TRUE) 
+nbhd2.2 <- merge(nbhd, Categories2.old, by.x='Neighborho', by.y ="Neighborhoods", all.x =TRUE) 
+
+
+tmap_mode('view')
+map1.2 <- tm_shape(nbhd1.1) + tm_polygons('ALS_' , style="pretty", palette = "YlOrBr", title = "ALS Paramedic <br> For a Week in 2020") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom"))
+
+tmap_mode('view')
+map2.2 <- tm_shape(nbhd2.2) + tm_polygons('ALS_' , style="pretty", palette = "YlOrBr", title = "ALS Paramedic  <br> For a Week in 2019") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom"))
+
+tmap_arrange(map1.2, map2.2)
+
+
+tmap_mode('view')
+map3.2 <- tm_shape(nbhd1.1) + tm_polygons('BLSA_' , style="pretty", palette = pal, title = "BLS AEMT For <br> a Week in 2020") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom"))
+
+tmap_mode('view')
+map4.2 <- tm_shape(nbhd2.2) + tm_polygons('BLSA_' , style="pretty", palette = pal, title = "BLS AEMT For <br> a Week in 2019") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom"))
+
+tmap_arrange(map3.2, map4.2)
+
+
+
+tmap_mode('view')
+map5.2 <- tm_shape(nbhd1.1) + tm_polygons('BLS_', style="pretty", palette = "YlOrBr", title = "BLS Basic / EMT <br> For a week in 2020") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom"))
+
+tmap_mode('view')
+map6.2 <- tm_shape(nbhd2.2) + tm_polygons('BLS_', style="pretty", palette = "YlOrBr", title = "BLS Basic / EMT <br> For a Week in 2019") +tm_basemap(server = c('OpenStreetMap'))  + tm_view(alpha = 0.85,view.legend.position = c("right", "bottom"))
+
+tmap_arrange(map5.2, map6.2)
+
